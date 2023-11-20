@@ -99,6 +99,9 @@ patricia_node *patricia_trie_search(patricia_node *root, in6_addr address) {
 
         int match_len = in6_addr_get_match_bits_len(address, next_node->address, current_bits_len + next_node->bits_len - 1);
 
+        LOG_TRIE("Compare1: %s\n", in6_addr_to_bits_string(address, 0, 127));
+        LOG_TRIE("Compare2: %s\n", in6_addr_to_bits_string(next_node->address, 0, 127));
+
         LOG_TRIE("Match %d / %d current: %d\n", match_len, current_bits_len + next_node->bits_len, current_bits_len);
 
         if (next_node->is_prefix) {
@@ -193,12 +196,12 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
                 break;
             }
 
-            if (in6_addr_get_bit(current_node->address, match_len) == 0) { // Intermediate-Nextをつなぎなおす&目的のノードを作る
-                im_node->left = next_node;
-                im_node->right = create_patricia_node(address, prefix_len - match_len, true, im_node);
-            } else {
+            if (in6_addr_get_bit(address, match_len) == 0) { // Intermediate-Nextをつなぎなおす&目的のノードを作る
                 im_node->right = next_node;
                 im_node->left = create_patricia_node(address, prefix_len - match_len, true, im_node);
+            } else {
+                im_node->left = next_node;
+                im_node->right = create_patricia_node(address, prefix_len - match_len, true, im_node);
             }
 
             break;
@@ -281,7 +284,7 @@ void output_patricia_trie_child_node_dot(patricia_node *node, FILE *output) {
     if (node->left) {
         LOG_TRIE("%d - %d\n", get_prefix_len(node->left) - node->left->bits_len, get_prefix_len(node->left) - 1);
 
-        fprintf(output, "  \"%p\" -> \"%p\" [label=\"%s(%d)\"];\n", (void *)node, (void *)(node->left),
+        fprintf(output, "  \"%p\" -> \"%p\" [label=\"%s (%d)\"];\n", (void *)node, (void *)(node->left),
                 in6_addr_to_bits_string(node->left->address, get_prefix_len(node->left) - node->left->bits_len, get_prefix_len(node->left) - 1), node->left->bits_len);
         output_patricia_trie_child_node_dot(node->left, output);
     }
@@ -290,7 +293,7 @@ void output_patricia_trie_child_node_dot(patricia_node *node, FILE *output) {
     if (node->right) {
         LOG_TRIE("%d - %d\n", get_prefix_len(node->right) - node->right->bits_len, get_prefix_len(node->right) - 1);
 
-        fprintf(output, "  \"%p\" -> \"%p\" [label=\"%s(%d)\"];\n", (void *)node, (void *)(node->right),
+        fprintf(output, "  \"%p\" -> \"%p\" [label=\"%s (%d)\"];\n", (void *)node, (void *)(node->right),
                 in6_addr_to_bits_string(node->right->address, get_prefix_len(node->right) - node->right->bits_len, get_prefix_len(node->right) - 1), node->right->bits_len);
         output_patricia_trie_child_node_dot(node->right, output);
     }

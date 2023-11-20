@@ -94,6 +94,7 @@ int main() {
 
     patricia_trie_insert(root_node, sample_all_f8, 32);
 
+
     patricia_trie_insert(root_node, sample_all_0, 64); // 0の方向に64ビット分木をのばす
     patricia_trie_insert(root_node, sample_all_1, 64); // 1の方向に64ビット分木をのばす
 
