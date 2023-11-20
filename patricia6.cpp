@@ -164,7 +164,7 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
             if (current_bits_len == prefix_len) { // 目標だった時
                 LOG_TRIE("TODO: implementation\n");
                 next_node->is_prefix = true;
-                //TODO Set data
+                // TODO: Set data
                 break;
             }
 
@@ -182,21 +182,23 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
             }
 
             next_node->bits_len -= im_node_bits_len;
-           // next_node->address = in6_addr_clear_prefix(next_node->address, current_bits_len + im_node_bits_len + next_node->bits_len);
             next_node->parent = im_node;
 
             LOG_TRIE("Separated %d & %d\n", im_node_bits_len, next_node->bits_len);
 
             if(prefix_len == current_bits_len + match_len){
-                LOG_TRIE("TODO: Implementation2\n");
+                LOG_TRIE("TODO: Implementation 2\n");
+                next_node->is_prefix = true;
+                // TODO: Set data
+                break;
             }
 
             if (in6_addr_get_bit(current_node->address, match_len) == 0) { // Intermediate-Nextをつなぎなおす&目的のノードを作る
                 im_node->left = next_node;
-                im_node->right = create_patricia_node(in6_addr_clear_prefix(address, prefix_len), prefix_len -  match_len, true, im_node);
+                im_node->right = create_patricia_node(address, prefix_len - match_len, true, im_node);
             } else {
                 im_node->right = next_node;
-                im_node->left = create_patricia_node(in6_addr_clear_prefix(address, prefix_len), prefix_len -match_len, true, im_node);
+                im_node->left = create_patricia_node(address, prefix_len - match_len, true, im_node);
             }
 
             break;
