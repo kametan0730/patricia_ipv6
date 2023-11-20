@@ -99,19 +99,18 @@ int main() {
 
     patricia_trie_insert(root_node, sample_all_half, 128);
 
-    patricia_trie_insert(root_node, sample_i3, 64);
-    patricia_trie_insert(root_node, sample_i3, 64);
     patricia_trie_insert(root_node, sample_i4, 64);
+
+    patricia_trie_insert(root_node, sample_i3, 64);
 
     patricia_trie_insert(root_node, sample_all_0, 64);
 
-    patricia_trie_insert(root_node, sample_i5, 64);
     patricia_trie_insert(root_node, sample_i5, 64);
 
     printf("%s\n", in6_addr_to_bits_string(sample_all_half, 0, 127));
 
     // 検索テスト
-    patricia_node *result = patricia_trie_search(root_node, sample_i1);
+    patricia_node *result = patricia_trie_search(root_node, sample_i3);
     if (result != nullptr) {
         char str[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET6, &result->address, str, INET6_ADDRSTRLEN);
