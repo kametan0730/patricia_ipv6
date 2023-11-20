@@ -1,11 +1,12 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
+#include <bit>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <queue>
 
 #include "patricia6.h"
-#include <unistd.h>
 
 // ビットは0から127
 // 指定したビットを取得する
@@ -25,21 +26,21 @@ int in6_addr_clear_bit(in6_addr *address, int bit) {
     assert(bit >= 0);
     int byte_index = bit / 8;
     int bit_index = 7 - (bit % 8);
-    address->s6_addr[byte_index] &= ~(0b01 << bit_index) ;
+    address->s6_addr[byte_index] &= ~(1 << bit_index);
 }
 
 // 2つのアドレスを比べ、ビット列のマッチしてる長さを返す
-int get_in6_addr_match_bits_len(in6_addr addr1, in6_addr addr2, int start_bit, int end_bit){
+int in6_addr_get_match_bits_len(in6_addr addr1, in6_addr addr2, int end_bit) {
 
-    // ビットは、0ビット目, 1ビット目と数える
-    assert(start_bit < end_bit);
+    int start_bit = 0;
+    assert(start_bit <= end_bit);
     assert(end_bit < 128);
     assert(start_bit >= 0);
 
     int count = 0;
-
-    for(int i=0; i<=end_bit; i++){
-        if(in6_addr_get_bit(addr1, i) != in6_addr_get_bit(addr2, i)) return count;
+    for (int i = start_bit; i <= end_bit; i++) {
+        if (in6_addr_get_bit(addr1, i) != in6_addr_get_bit(addr2, i))
+            return count;
         count++;
     }
 
@@ -47,19 +48,19 @@ int get_in6_addr_match_bits_len(in6_addr addr1, in6_addr addr2, int start_bit, i
 }
 
 // IPアドレスを、プレフックス長でクリアする
-in6_addr in6_addr_clear_prefix(in6_addr addr, int prefix_len){
+in6_addr in6_addr_clear_prefix(in6_addr addr, int prefix_len) {
 
-    for(int i=prefix_len; i<128; i++){
+    for (int i = prefix_len; i < 128; i++) {
         in6_addr_clear_bit(&addr, i);
     }
     return addr;
 }
 
 // ノードを作成
-patricia_node* create_node(struct in6_addr address, int bits_len, int is_prefix, patricia_node *parent) {
-    
-    patricia_node* node = (patricia_node*) malloc(sizeof(patricia_node));
-    if (node == NULL) {
+patricia_node *create_patricia_node(in6_addr address, int bits_len, int is_prefix, patricia_node *parent) {
+
+    patricia_node *node = (patricia_node *)malloc(sizeof(patricia_node));
+    if (node == nullptr) {
         fprintf(stderr, "failed to malloc for patricia node\n");
         return nullptr;
     }
@@ -69,39 +70,42 @@ patricia_node* create_node(struct in6_addr address, int bits_len, int is_prefix,
     node->address = address;
     node->bits_len = bits_len;
     node->is_prefix = is_prefix;
-    
+
+    char addr_str[INET6_ADDRSTRLEN];
+    inet_ntop(AF_INET6, &address, addr_str, sizeof(addr_str));
+
+    LOG_TRIE("Created patricia node %s (%d)\n", addr_str, bits_len);
+
     return node;
 }
 
-
 // トライ木からIPアドレスを検索する
-patricia_node* search(patricia_node *root, in6_addr address) {
+patricia_node *patricia_trie_search(patricia_node *root, in6_addr address) {
 
-    printf("Entering search\n");
-
+    LOG_TRIE("Entering patricia_trie_search\n");
 
     int current_bits_len = 0;
-    patricia_node* current_node = root;
-    patricia_node* next_node = nullptr;
-    patricia_node* last_matched = nullptr;
+    patricia_node *current_node = root;
+    patricia_node *next_node = nullptr;
+    patricia_node *last_matched = nullptr;
 
-    while(current_bits_len < 128){
+    while (current_bits_len < 128) {
 
         next_node = (in6_addr_get_bit(address, current_bits_len) == 0) ? current_node->left : current_node->right;
 
-        if(next_node == nullptr){
+        if (next_node == nullptr) {
             break;
         }
 
-        int match_len = get_in6_addr_match_bits_len(address, next_node->address, current_bits_len, current_bits_len + next_node->bits_len-1);
-        
-        printf("Mach %d\n", match_len);
-        
-        if(next_node->bits_len != 0 and match_len != current_bits_len + next_node->bits_len){
+        int match_len = in6_addr_get_match_bits_len(address, next_node->address, current_bits_len + next_node->bits_len - 1);
+
+        LOG_TRIE("Match %d\n", match_len);
+
+        if (next_node->bits_len != 0 and match_len != current_bits_len + next_node->bits_len) {
             break;
         }
 
-        if(next_node->is_prefix){
+        if (next_node->is_prefix) {
             last_matched = next_node;
         }
 
@@ -109,85 +113,107 @@ patricia_node* search(patricia_node *root, in6_addr address) {
         current_bits_len += next_node->bits_len;
     }
 
-    printf("Exited search\n");
+    LOG_TRIE("Exited patricia_trie_search\n");
 
     return last_matched;
-
 }
 
 // トライ木にエントリを追加する
-patricia_node* insert(patricia_node *root, struct in6_addr address, int prefix_len) {
+patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int prefix_len) {
+
+    LOG_TRIE("Entering patricia_trie_insert\n");
 
     int current_bits_len = 0;
-    patricia_node* current_node = root;
-    patricia_node* next_node;
+    patricia_node *current_node = root; // ループ内で注目するノード
+    patricia_node *next_node; // ビット列と比較して次に移動するノード
 
-    // 引数で渡された情報をきれいにする
+    // 引数で渡されたプレフィックスをきれいにする
     address = in6_addr_clear_prefix(address, prefix_len);
 
-    // 枝を辿る
-    while(true){
+    char addr_str[INET6_ADDRSTRLEN];
+    inet_ntop(AF_INET6, &address, addr_str, sizeof(addr_str));
 
-        if(in6_addr_get_bit(address, current_bits_len) == 0){ // 現在のノードから次に進むノードを決める
+    LOG_TRIE("Inserting %s/%d\n", addr_str, prefix_len);
+
+    // 枝を辿る
+    while (true) { // ループ内では次に進むノードを決定する
+
+        if (in6_addr_get_bit(address, current_bits_len) == 0) { // 現在のノードから次に進むノードを決める
             next_node = current_node->left;
-            if(next_node == nullptr){ // ノードを作成
-                current_node->left = create_node(in6_addr_clear_prefix(address, current_bits_len + prefix_len - current_bits_len), prefix_len - current_bits_len, true, current_node);
+            if (next_node == nullptr) { // ノードを作成
+                current_node->left = create_patricia_node(address, prefix_len - current_bits_len, true, current_node);
                 break;
             }
-        }else{
+        } else {
             next_node = current_node->right;
-            if(next_node == nullptr){ // ノードを作成
-                current_node->right = create_node(in6_addr_clear_prefix(address, current_bits_len + prefix_len - current_bits_len), prefix_len - current_bits_len, true, current_node);
+            if (next_node == nullptr) { // ノードを作成
+                current_node->right = create_patricia_node(address, prefix_len - current_bits_len, true, current_node);
                 break;
             }
         }
 
-        int match_len = get_in6_addr_match_bits_len(address, next_node->address, 0, current_bits_len+next_node->bits_len-1);
+        int match_len = in6_addr_get_match_bits_len(address, next_node->address, current_bits_len + next_node->bits_len - 1);
 
-        printf("Compare %d vs %d\n", match_len, current_bits_len + current_node->bits_len);
-        if(match_len == current_bits_len + current_node->bits_len){ // 次のノードと全マッチ
-            current_bits_len += next_node->bits_len;
+        LOG_TRIE("Match len = %d & Next bits prefix = %d (%d + %d)\n", match_len, current_bits_len + next_node->bits_len, current_bits_len, next_node->bits_len);
+
+        if (match_len == current_bits_len + next_node->bits_len) { // 次のノードと全マッチ
+            current_bits_len += next_node->bits_len; // next? current?
             current_node = next_node;
 
-        }else{ // 次のノードと途中までマッチ
-
-            // 途中にノードを作成する必要がある
-            int new_node_bits_len = match_len - current_bits_len;
-            printf("Creation node len = %d\n", new_node_bits_len);
-            patricia_node *new_node = create_node(in6_addr_clear_prefix(address, current_bits_len + new_node_bits_len), new_node_bits_len, false, current_node); // 新しく作る
-
-            if(current_node->left == next_node){ // 上をつなぎなおす
-                current_node->left = new_node;
-            }else{
-                current_node->right = new_node;
+            // ここで、目標のノードかの判定がいる?
+            if (current_bits_len == prefix_len) { // 目標だった時
+                LOG_TRIE("TODO: implementation\n");
+                next_node->is_prefix = true;
+                //TODO Set data
+                break;
             }
 
-            next_node->bits_len -= (match_len - current_bits_len);
-            next_node->address = in6_addr_clear_prefix(next_node->address, current_bits_len + next_node->bits_len);
-            next_node->parent = new_node;
+        } else { // 次のノードと途中までマッチ
 
-            if(in6_addr_get_bit(current_node->address, match_len) == 0){ // 下をつなぎなおす&目的のノードを作る
-                new_node->left = next_node;
-                new_node->right = create_node(in6_addr_clear_prefix(address, prefix_len - match_len), prefix_len - current_bits_len - match_len, true, new_node);
-            }else{
-                new_node->right = next_node;
-                new_node->left = create_node(in6_addr_clear_prefix(address, prefix_len - match_len), prefix_len - current_bits_len - match_len, true, new_node);
+            // Current-Intermediate-Nextに分割
+            int intermediate_node_bits_len = match_len;
+            LOG_TRIE("Intermediate node bits len = %d\n", match_len);
+            patricia_node *im_node = create_patricia_node(in6_addr_clear_prefix(address, current_bits_len + intermediate_node_bits_len), intermediate_node_bits_len, false, current_node); // 新しく作る
+
+            if (current_node->left == next_node) { // Current-Intermediateをつなぎなおす
+                current_node->left = im_node;
+            } else {
+                current_node->right = im_node;
+            }
+
+            next_node->bits_len -= intermediate_node_bits_len;
+           // next_node->address = in6_addr_clear_prefix(next_node->address, current_bits_len + intermediate_node_bits_len + next_node->bits_len);
+            next_node->parent = im_node;
+
+            LOG_TRIE("Separated %d & %d\n", intermediate_node_bits_len, next_node->bits_len);
+
+            if(prefix_len == current_bits_len + match_len){
+                LOG_TRIE("TODO: Implementation2\n");
+            }
+
+            if (in6_addr_get_bit(current_node->address, match_len) == 0) { // Intermediate-Nextをつなぎなおす&目的のノードを作る
+                im_node->left = next_node;
+                im_node->right = create_patricia_node(in6_addr_clear_prefix(address, prefix_len), prefix_len - current_bits_len - match_len, true, im_node);
+            } else {
+                im_node->right = next_node;
+                im_node->left = create_patricia_node(in6_addr_clear_prefix(address, prefix_len), prefix_len - current_bits_len - match_len, true, im_node);
             }
 
             break;
-        }        
+        }
     }
+
+    LOG_TRIE("Exited patricia_trie_insert\n");
 
     return root;
 }
 
-
-int get_prefix_len(patricia_node *node){
+int get_prefix_len(patricia_node *node) {
     int sum = 0;
     patricia_node *current = node;
-    while(true){
+    while (true) {
         sum += current->bits_len;
-        if(current->parent == nullptr){
+        if (current->parent == nullptr) {
             break;
         }
         current = current->parent;
@@ -195,12 +221,11 @@ int get_prefix_len(patricia_node *node){
     return sum;
 }
 
-
-int get_node_count(patricia_node *node){
+int get_distance_from_root(patricia_node *node) {
     int sum = 0;
     patricia_node *current = node;
-    while(true){
-        if(current->parent == nullptr){
+    while (true) {
+        if (current->parent == nullptr) {
             break;
         }
         sum += 1;
@@ -209,59 +234,91 @@ int get_node_count(patricia_node *node){
     return sum;
 }
 
-// IPv6アドレスを文字列に変換する関数
-const char *ipv6_to_string(const struct in6_addr *addr, char *str, size_t size) {
-    inet_ntop(AF_INET6, addr, str, size);
-    return str;
+char in6_addr_bits_string[130];
+// IPv6アドレスをビット列の文字列に変換する
+char *in6_addr_to_bits_string(in6_addr addr, int start_bit, int end_bit) {
+
+    assert(start_bit >= 0);
+    assert(end_bit < 128);
+    assert(start_bit <= end_bit);
+
+    int i;
+    for (i = 0; i <= end_bit - start_bit; i++) {
+        in6_addr_bits_string[i] = in6_addr_get_bit(addr, start_bit + i) == 0 ? '0' : '1';
+    }
+    in6_addr_bits_string[i] = '\0';
+    return in6_addr_bits_string;
 }
 
-// DOT言語でIPv6パトリシア木を出力する再帰関数
-void print_dot_patricia_trie(struct patricia_node *node, FILE *output) {
-    if (node == NULL) {
+// 立ってるビットの数を返す
+int in6_addr_popcnt(in6_addr addr) {
+
+    int cnt0 = std::popcount(addr.__in6_u.__u6_addr32[0]);
+    int cnt1 = std::popcount(addr.__in6_u.__u6_addr32[1]);
+    int cnt2 = std::popcount(addr.__in6_u.__u6_addr32[2]);
+    int cnt3 = std::popcount(addr.__in6_u.__u6_addr32[3]);
+
+    LOG_TRIE("cnt: %d %d %d %d\n", cnt0, cnt1, cnt2, cnt3);
+
+    return (cnt0 + cnt1 + cnt2 + cnt3);
+}
+
+// DOT言語でノードの子ノードを出力する再帰関数
+void output_patricia_trie_child_node_dot(patricia_node *node, FILE *output) {
+    if (node == nullptr) {
         return;
     }
 
     char addr_str[INET6_ADDRSTRLEN];
-    ipv6_to_string(&node->address, addr_str, sizeof(addr_str));
+    inet_ntop(AF_INET6, &node->address, addr_str, sizeof(addr_str));
 
     // ノードを出力
-    fprintf(output, "  \"%p\" [label=\"%s/%d\"];\n", (void *)node, addr_str, node->bits_len);
+    fprintf(output, "  \"%p\" [label=\"%s/%d\"];\n", (void *)node, addr_str, get_prefix_len(node));
 
     // 左の子ノードを処理
     if (node->left) {
-        fprintf(output, "  \"%p\" -> \"%p\" [label=\"Left\"];\n", (void *)node, (void *)(node->left));
-        print_dot_patricia_trie(node->left, output);
+        LOG_TRIE("%d - %d\n", get_prefix_len(node->left) - node->left->bits_len, get_prefix_len(node->left) - 1);
+
+        fprintf(output, "  \"%p\" -> \"%p\" [label=\"%s(%d)\"];\n", (void *)node, (void *)(node->left),
+                in6_addr_to_bits_string(node->left->address, get_prefix_len(node->left) - node->left->bits_len, get_prefix_len(node->left) - 1), node->left->bits_len);
+        output_patricia_trie_child_node_dot(node->left, output);
     }
 
     // 右の子ノードを処理
     if (node->right) {
-        fprintf(output, "  \"%p\" -> \"%p\" [label=\"Right\"];\n", (void *)node, (void *)(node->right));
-        print_dot_patricia_trie(node->right, output);
+        LOG_TRIE("%d - %d\n", get_prefix_len(node->right) - node->right->bits_len, get_prefix_len(node->right) - 1);
+
+        fprintf(output, "  \"%p\" -> \"%p\" [label=\"%s(%d)\"];\n", (void *)node, (void *)(node->right),
+                in6_addr_to_bits_string(node->right->address, get_prefix_len(node->right) - node->right->bits_len, get_prefix_len(node->right) - 1), node->right->bits_len);
+        output_patricia_trie_child_node_dot(node->right, output);
     }
 }
 
+// DOT言語で木の内容を出力する
+void dump_patricia_trie_dot(patricia_node *root) {
 
-void dump_dot_patricia_trie(patricia_node *root){
+    LOG_TRIE("Generating patricia_trie.dot\n");
 
     FILE *output = fopen("patricia_trie.dot", "w");
-    if (output == NULL) {
-        perror("ファイルを開けませんでした");
+    if (output == nullptr) {
+        perror("[TRIE] Failed to open file");
         return;
     }
 
     fprintf(output, "digraph PatriciaTrie {\n");
 
-    print_dot_patricia_trie(root, output);
+    output_patricia_trie_child_node_dot(root, output);
 
     fprintf(output, "}\n");
 
     fclose(output);
+
+    LOG_TRIE("Generated patricia_trie.dot\n");
 }
 
+// テキストでエントリを出力する
+void dump_patricia_trie_text(patricia_node *root) {
 
-
-void dump_patricia_trie(patricia_node *root) {
-    
     patricia_node *current_node;
     std::queue<patricia_node *> node_queue;
     node_queue.push(root);
@@ -270,10 +327,11 @@ void dump_patricia_trie(patricia_node *root) {
         current_node = node_queue.front();
         node_queue.pop();
 
-        char str[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET6, &(current_node->address), str, INET6_ADDRSTRLEN);
+        char ipv6_str[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &(current_node->address), ipv6_str, INET6_ADDRSTRLEN);
 
-        printf("%s/%d (%d) %d nodes - %s\n", str, get_prefix_len(current_node), current_node->bits_len,get_node_count(current_node), current_node->is_prefix  ? "prefix" : "not prefix");
+        LOG_TRIE("%s\n", in6_addr_to_bits_string(current_node->address, 0, 127));
+        LOG_TRIE("%s/%d (%d) %d nodes - %s\n", ipv6_str, get_prefix_len(current_node), current_node->bits_len, get_distance_from_root(current_node), current_node->is_prefix ? "prefix" : "not prefix");
 
         if (current_node->left != nullptr) {
             node_queue.push(current_node->left);
