@@ -27,7 +27,7 @@ char* in6_addr_to_bits_string(in6_addr addr, int start_bit, int end_bit);
 
 patricia_node* create_patricia_node(in6_addr address, int bits_len, int is_prefix, patricia_node *parent);
 patricia_node* patricia_trie_search(patricia_node *root, in6_addr address);
-patricia_node* patricia_trie_insert(patricia_node *root, in6_addr address, int prefix_len);
+patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int prefix_len, void *data_ptr);
 void dump_patricia_trie_dot(patricia_node *root);
 void dump_patricia_trie_text(patricia_node *root);
 

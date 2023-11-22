@@ -122,7 +122,7 @@ patricia_node *patricia_trie_search(patricia_node *root, in6_addr address) {
 }
 
 // トライ木にエントリを追加する
-patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int prefix_len) {
+patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int prefix_len, void* data_ptr) {
 
     LOG_TRIE("Entering patricia_trie_insert\n");
 
@@ -145,12 +145,14 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
             next_node = current_node->left;
             if (next_node == nullptr) { // ノードを作成
                 current_node->left = create_patricia_node(address, prefix_len - current_bits_len, true, current_node);
+                current_node->left->data = data_ptr;
                 break;
             }
         } else {
             next_node = current_node->right;
             if (next_node == nullptr) { // ノードを作成
                 current_node->right = create_patricia_node(address, prefix_len - current_bits_len, true, current_node);
+                current_node->right->data = data_ptr;
                 break;
             }
         }
@@ -167,8 +169,9 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
             if (current_bits_len == prefix_len) { // 目標だった時
                 LOG_TRIE("TODO: implementation\n");
                 next_node->is_prefix = true;
-                // TODO: Set data
-                break;
+                next_node->data = data_ptr;
+                    // TODO: Set data
+                    break;
             }
 
         } else { // 次のノードと途中までマッチ
@@ -192,6 +195,7 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
             if(prefix_len == current_bits_len + match_len){
                 LOG_TRIE("TODO: Implementation 2\n");
                 next_node->is_prefix = true;
+                next_node->data = data_ptr;
                 // TODO: Set data
                 break;
             }
@@ -199,9 +203,11 @@ patricia_node *patricia_trie_insert(patricia_node *root, in6_addr address, int p
             if (in6_addr_get_bit(address, match_len) == 0) { // Intermediate-Nextをつなぎなおす&目的のノードを作る
                 im_node->right = next_node;
                 im_node->left = create_patricia_node(address, prefix_len - match_len, true, im_node);
+                im_node->left->data = data_ptr;
             } else {
                 im_node->left = next_node;
                 im_node->right = create_patricia_node(address, prefix_len - match_len, true, im_node);
+                im_node->right->data = data_ptr;
             }
 
             break;
@@ -299,6 +305,47 @@ void output_patricia_trie_child_node_dot(patricia_node *node, FILE *output) {
     }
 }
 
+void output_subgraph_strings(patricia_node *root, FILE *output) {
+
+    uint64_t ptrs[129][100]; // 各くプレフィックス100個まで(雑実装)
+    int ptrs_cnt[129];
+
+    for(int i=0;i<129;i++){
+        ptrs_cnt[i] = 0;
+    }
+
+    patricia_node *current_node;
+    std::queue<patricia_node *> node_queue;
+    node_queue.push(root);
+
+    while (!node_queue.empty()) {
+        current_node = node_queue.front();
+        node_queue.pop();
+
+        ptrs[get_prefix_len(current_node)][ptrs_cnt[get_prefix_len(current_node)]++] = (uint64_t)current_node;
+
+        if (current_node->left != nullptr) {
+            node_queue.push(current_node->left);
+        }
+        if (current_node->right != nullptr) {
+            node_queue.push(current_node->right);
+        }
+    }
+
+    for (int i = 0; i < 129; i++) {
+
+        if (ptrs_cnt[i] == 0) {
+            continue;
+        }
+
+        fprintf(output, "  subgraph { rank = same; ", i);
+        for (int j = 0; j < ptrs_cnt[i]; j++) {
+            fprintf(output, "\"%p\"; ", ptrs[i][j]);
+        }
+        fprintf(output, "};\n");
+    }
+}
+
 // DOT言語で木の内容を出力する
 void dump_patricia_trie_dot(patricia_node *root) {
 
@@ -311,6 +358,8 @@ void dump_patricia_trie_dot(patricia_node *root) {
     }
 
     fprintf(output, "digraph PatriciaTrie {\n");
+
+    // output_subgraph_strings(root, output); // 同じプレフィックスのノードの高さを合わせる
 
     output_patricia_trie_child_node_dot(root, output);
 

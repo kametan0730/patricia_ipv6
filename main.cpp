@@ -66,6 +66,9 @@ int main() {
 
     // --------- ここまでテスト ---------
 
+    in6_addr nexthop;
+    inet_pton(AF_INET6, "2001:0db8:85a3:0000::1", &nexthop);
+
     in6_addr sample_all_f4;
     inet_pton(AF_INET6, "ffff::0", &sample_all_f4);
 
@@ -90,23 +93,22 @@ int main() {
     in6_addr sample_i5;
     inet_pton(AF_INET6, "4000:0000:0000:0000:0000:0000:0000:0000", &sample_i5);
 
-    patricia_trie_insert(root_node, sample_all_f4, 16);
+    patricia_trie_insert(root_node, sample_all_f4, 16, &sample_all_f4);
 
-    patricia_trie_insert(root_node, sample_all_f8, 32);
+    patricia_trie_insert(root_node, sample_all_f8, 32, &sample_all_f8);
 
+    patricia_trie_insert(root_node, sample_all_0, 64, &sample_all_0); // 0の方向に64ビット分木をのばす
+    patricia_trie_insert(root_node, sample_all_1, 64, &sample_all_1); // 1の方向に64ビット分木をのばす
 
-    patricia_trie_insert(root_node, sample_all_0, 64); // 0の方向に64ビット分木をのばす
-    patricia_trie_insert(root_node, sample_all_1, 64); // 1の方向に64ビット分木をのばす
+    patricia_trie_insert(root_node, sample_all_half, 128, &sample_all_half);
 
-    patricia_trie_insert(root_node, sample_all_half, 128);
+    patricia_trie_insert(root_node, sample_i4, 64, &sample_i4);
 
-    patricia_trie_insert(root_node, sample_i4, 64);
+    patricia_trie_insert(root_node, sample_i3, 64, &nexthop);
 
-    patricia_trie_insert(root_node, sample_i3, 64);
+    patricia_trie_insert(root_node, sample_all_0, 64, &sample_all_0);
 
-    patricia_trie_insert(root_node, sample_all_0, 64);
-
-    patricia_trie_insert(root_node, sample_i5, 64);
+    patricia_trie_insert(root_node, sample_i5, 64, &sample_i5);
 
     printf("%s\n", in6_addr_to_bits_string(sample_all_half, 0, 127));
 
@@ -114,7 +116,7 @@ int main() {
     patricia_node *result = patricia_trie_search(root_node, sample_i3);
     if (result != nullptr) {
         char str[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET6, &result->address, str, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, (in6_addr *)result->data, str, INET6_ADDRSTRLEN);
         printf("Found: %s\n", str);
     } else {
         printf("Not found\n");
